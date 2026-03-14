@@ -6,15 +6,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import all preprocessing functions
-from preprocessing import (check_data_information, 
-                           initial_data_transform, 
-                           handle_missing_values, 
-                           filter_outliers, 
-                           feature_engineering, 
-                           feature_encoding, 
-                           feature_scaling)
+from utils.preprocessing import (check_data_information, 
+                                 initial_data_transform, 
+                                 handle_missing_values, 
+                                 filter_outliers, 
+                                 feature_engineering, 
+                                 feature_encoding, 
+                                 feature_scaling)
 
-from feature_definitions import get_feature_definitions
+from utils.feature_definitions import get_feature_definitions
 
 #  Page Config
 st.set_page_config(page_title="Loan Prediction App", layout="wide")
@@ -99,31 +99,70 @@ with st.expander("**Read Instructions First: About This App**"):
     - Continuous monitoring and updating of the model is recommended to maintain performance
     """, unsafe_allow_html=True)
 
+# Cache expensive data loading operations
+@st.cache_data
+def load_column_metadata():
+    """Load and cache column metadata from training data to avoid loading full dataset repeatedly."""
+    df = pd.read_csv('data/Training Data.csv')
+    df = initial_data_transform(df)
+    
+    # Extract only the metadata we need for the form
+    metadata = {}
+    for col in df.columns:
+        if col != "Risk_Flag":
+            metadata[col] = {
+                'dtype': str(df[col].dtype),
+                'is_numeric': pd.api.types.is_numeric_dtype(df[col]),
+                'is_datetime': pd.api.types.is_datetime64_any_dtype(df[col]),
+                'is_categorical': pd.api.types.is_categorical_dtype(df[col]) or df[col].dtype == 'object',
+                'min': float(df[col].min()) if pd.api.types.is_numeric_dtype(df[col]) else None,
+                'max': float(df[col].max()) if pd.api.types.is_numeric_dtype(df[col]) else None,
+                'mean': float(df[col].mean()) if pd.api.types.is_numeric_dtype(df[col]) else None,
+                'unique_values': df[col].unique().tolist() if not pd.api.types.is_numeric_dtype(df[col]) else None
+            }
+    
+    # Also get sample data for preview
+    sample_data = df.head()
+    
+    return metadata, sample_data
+
+@st.cache_data
+def load_preprocessed_columns():
+    """Load and cache the expected columns from preprocessed data."""
+    df = pd.read_csv('data/df_model_rewrite.csv')
+    columns = [col for col in df.columns if col != "Risk_Flag"]
+    return columns
+
 # Load pre-trained model
 @st.cache_resource
 def load_model():
-    parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-    model_path = os.path.join(parent_dir, 'models', 'tuned_knn_model.joblib')
-    
+    # Model is in the models directory at project root
+    model_path = os.path.join('models', 'tuned_knn_model.joblib')
     return joblib.load(model_path)
 
 model = load_model()
 
-# Load original CSV data form author github
-url_ori = "https://raw.githubusercontent.com/mcikalmerdeka/Loan-Prediction-Based-on-Costumer-Behaviour/main/data/Training%20Data.csv"
-ori_df = pd.read_csv(url_ori)
-
-# Initial transform for original dataframe
-ori_df = initial_data_transform(ori_df)
+# Load cached metadata instead of full datasets
+column_metadata, ori_df_sample = load_column_metadata()
+expected_columns = load_preprocessed_columns()
 
 # Display original data
 st.subheader("Original Data Preview")
-st.write(ori_df.head())
+st.write(ori_df_sample)
 
 # Display data information
 with st.expander("📊 Data Information"):
     st.markdown("### Data Information")
-    st.write(check_data_information(ori_df, ori_df.columns))
+    # Convert metadata to DataFrame for display
+    info_data = []
+    for col, meta in column_metadata.items():
+        info_data.append({
+            'Feature': col,
+            'Data Type': meta['dtype'],
+            'Unique Values': str(len(meta['unique_values'])) if meta['unique_values'] else 'N/A',
+            'Sample Values': str(meta['unique_values'][:5]) if meta['unique_values'] else 'N/A'
+        })
+    st.write(pd.DataFrame(info_data))
 
 # Add Data Dictionary section
 with st.expander("📚 Data Dictionary"):
@@ -161,11 +200,6 @@ with st.expander("📚 Data Dictionary"):
 target_col = "Risk_Flag"
 gather_data = False
 
-# Import the preprocessed original data (this will be used to match the columns used in the model)
-url_ori_processed = "https://raw.githubusercontent.com/mcikalmerdeka/Loan-Prediction-Based-on-Costumer-Behaviour/main/data/df_model_rewrite.csv"
-ori_df_preprocessed = pd.read_csv(url_ori_processed)
-ori_df_preprocessed = ori_df_preprocessed.loc[:, ori_df_preprocessed.columns != target_col]
-
 # Input type selection
 input_type = st.empty()
 input_type = st.radio('Select Input Type', ['Individual Customer', 'Batch Data'])
@@ -182,32 +216,34 @@ if input_type.lower() == 'individual customer':
         col1, col2 = st.columns(2)
 
         # Split columns into two groups for layout
-        all_columns = [col for col in ori_df.columns if col != target_col]
+        all_columns = list(column_metadata.keys())
         mid_point = len(all_columns) // 2
 
         with col1:
             for column in all_columns[:mid_point]:
-                if pd.api.types.is_datetime64_any_dtype(ori_df[column]):
+                meta = column_metadata[column]
+                
+                if meta['is_datetime']:
                     prediction_input[column] = st.date_input(f"Enter {column}")
 
-                elif pd.api.types.is_numeric_dtype(ori_df[column]):
-                    col_min = ori_df[column].min()
-                    col_max = ori_df[column].max()
-                    col_mean = ori_df[column].mean()
+                elif meta['is_numeric']:
+                    col_min = meta['min'] if meta['min'] is not None else 0.0
+                    col_max = meta['max'] if meta['max'] is not None else None
+                    col_mean = meta['mean'] if meta['mean'] is not None else 0.0
 
                     prediction_input[column] = st.number_input(
                         f"Enter {column}",
-                        min_value=float(col_min) if not pd.isna(col_min) else 0.0,
-                        max_value=float(col_max) if not pd.isna(col_max) else None,
-                        value=float(col_mean) if not pd.isna(col_mean) else 0.0,
+                        min_value=float(col_min),
+                        max_value=float(col_max) if col_max is not None else None,
+                        value=float(col_mean),
                         step=0.1
                     )
                     
-                elif pd.api.types.is_categorical_dtype(ori_df[column]) or ori_df[column].dtype == 'object':
-                    unique_values = ori_df[column].unique()
+                elif meta['is_categorical']:
+                    unique_values = meta['unique_values']
                     prediction_input[column] = st.selectbox(
                         f'Select {column}',
-                        options=list(unique_values)
+                        options=unique_values
                     )
                 
                 else:
@@ -215,27 +251,29 @@ if input_type.lower() == 'individual customer':
 
         with col2:
             for column in all_columns[mid_point:]:
-                if pd.api.types.is_datetime64_any_dtype(ori_df[column]):
+                meta = column_metadata[column]
+                
+                if meta['is_datetime']:
                     prediction_input[column] = st.date_input(f"Enter {column}")
                 
-                elif pd.api.types.is_numeric_dtype(ori_df[column]):
-                    col_min = ori_df[column].min()
-                    col_max = ori_df[column].max()
-                    col_mean = ori_df[column].mean()
+                elif meta['is_numeric']:
+                    col_min = meta['min'] if meta['min'] is not None else 0.0
+                    col_max = meta['max'] if meta['max'] is not None else None
+                    col_mean = meta['mean'] if meta['mean'] is not None else 0.0
 
                     prediction_input[column] = st.number_input(
                         f"Enter {column}",
-                        min_value=float(col_min) if not pd.isna(col_min) else 0.0,
-                        max_value=float(col_max) if not pd.isna(col_max) else None,
-                        value=float(col_mean) if not pd.isna(col_mean) else 0.0,
+                        min_value=float(col_min),
+                        max_value=float(col_max) if col_max is not None else None,
+                        value=float(col_mean),
                         step=0.1
                     )
                     
-                elif pd.api.types.is_categorical_dtype(ori_df[column]) or ori_df[column].dtype == 'object':
-                    unique_values = ori_df[column].unique()
+                elif meta['is_categorical']:
+                    unique_values = meta['unique_values']
                     prediction_input[column] = st.selectbox(
                         f'Select {column}',
-                        options=list(unique_values)
+                        options=unique_values
                     )
                 
                 else:
@@ -309,9 +347,8 @@ elif input_type.lower() == 'batch data':
 
         # First button with a unique key
         if st.button("Use Example Data", key="example_data_button"):
-            # Load example CSV data from author's GitHub
-            url_example_batch_df = "https://raw.githubusercontent.com/mcikalmerdeka/Loan-Prediction-Based-on-Costumer-Behaviour/main/data/batch_example.csv"
-            batch_input_df = pd.read_csv(url_example_batch_df)
+            # Load example CSV data from local data directory
+            batch_input_df = pd.read_csv('data/batch_example.csv')
             batch_input_df = initial_data_transform(batch_input_df)
             gather_data = True
         
@@ -353,8 +390,7 @@ if gather_data and input_type.lower() == 'individual customer':
 
         ## 4. Feature encoding
         try:
-            input_df, expected_columns = feature_encoding(input_df, original_data=ori_df_preprocessed)
-            st.session_state.expected_columns = expected_columns
+            input_df = feature_encoding(input_df, expected_columns=expected_columns)
         except Exception as e:
             st.error(f"Error in feature encoding: {str(e)}")
             st.write("Debug information:")
@@ -367,7 +403,7 @@ if gather_data and input_type.lower() == 'individual customer':
         
         ## 5. Feature Scaling
         try:
-            input_df = feature_scaling(data=input_df, original_data=ori_df_preprocessed)
+            input_df = feature_scaling(data=input_df)
         except Exception as e:
             st.error(f"Error in feature scaling: {str(e)}")
 
@@ -426,8 +462,7 @@ elif gather_data and input_type.lower() == 'batch data':
 
         ## 4. Feature encoding
         try:
-            batch_input_df, expected_columns = feature_encoding(batch_input_df, original_data=ori_df_preprocessed)
-            st.session_state.expected_columns = expected_columns
+            batch_input_df = feature_encoding(batch_input_df, expected_columns=expected_columns)
         except Exception as e:
             st.error(f"Error in feature encoding: {str(e)}")
             st.write("Debug information:")
@@ -440,7 +475,7 @@ elif gather_data and input_type.lower() == 'batch data':
         
         ## 5. Feature Scaling
         try:
-            batch_input_df = feature_scaling(data=batch_input_df, original_data=ori_df_preprocessed)
+            batch_input_df = feature_scaling(data=batch_input_df)
         except Exception as e:
             st.error(f"Error in feature scaling: {str(e)}")
 
@@ -454,16 +489,28 @@ elif gather_data and input_type.lower() == 'batch data':
         # Create a copy for preprocessing result
         model_df = batch_input_df.copy()
 
-        # Display the prediction result
+        # Display the prediction result - predict all rows at once for better performance
         try:
-            for row in range(len(model_df)):
-                prediction = model.predict(model_df.iloc[row, :].values.reshape(1, -1))
-
-                # Display prediction result with explanation
-                if prediction[0] == 0:
-                    st.success(f"Customer {row + 1} is predicted as **Not Default**.\n\n**Not Default** means the customer is likely to repay the loan on time.")
-                else:
-                    st.error(f"Customer {row + 1} is predicted as **Default**.\n\n**Default** means the customer is likely to fail to repay the loan on time.")
+            predictions = model.predict(model_df)
+            
+            # Create a results dataframe
+            results_df = pd.DataFrame({
+                'Customer_ID': range(1, len(predictions) + 1),
+                'Prediction': ['Not Default' if p == 0 else 'Default' for p in predictions]
+            })
+            
+            # Display summary
+            st.write(f"**Total Predictions: {len(predictions)}**")
+            st.write(f"- Not Default: {sum(predictions == 0)}")
+            st.write(f"- Default: {sum(predictions == 1)}")
+            
+            # Display individual results in an expander to avoid cluttering the UI
+            with st.expander("View Individual Predictions"):
+                for idx, (row_num, pred) in enumerate(zip(range(1, len(predictions) + 1), predictions)):
+                    if pred == 0:
+                        st.success(f"Customer {row_num}: **Not Default**")
+                    else:
+                        st.error(f"Customer {row_num}: **Default**")
 
         except Exception as e:
-            st.error(f"Error in prediction: {str(e)}") 
+            st.error(f"Error in prediction: {str(e)}")

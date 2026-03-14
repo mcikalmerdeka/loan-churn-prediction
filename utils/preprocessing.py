@@ -3,11 +3,53 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import scipy.stats as stats
+import joblib
+import os
 
-# Import the preprocessed original data
-url_ori_processed = "https://raw.githubusercontent.com/mcikalmerdeka/Loan-Prediction-Based-on-Costumer-Behaviour/main/data/df_model_rewrite.csv"
-ori_df_preprocessed = pd.read_csv(url_ori_processed)
-ori_df_preprocessed = ori_df_preprocessed.loc[:, ori_df_preprocessed.columns != "Risk_Flag"]
+# Cache for fitted scalers to avoid refitting on every prediction
+_fitted_scalers = None
+
+def _get_fitted_scalers():
+    """Get or create fitted scalers. Load from disk if available, otherwise fit and save."""
+    global _fitted_scalers
+    
+    if _fitted_scalers is not None:
+        return _fitted_scalers
+    
+    # Try to load pre-fitted scalers from disk
+    scalers_path = os.path.join('models', 'fitted_scalers.joblib')
+    if os.path.exists(scalers_path):
+        _fitted_scalers = joblib.load(scalers_path)
+        return _fitted_scalers
+    
+    # Fit scalers on training data and save
+    df = pd.read_csv('data/df_model_rewrite.csv')
+    df = df.loc[:, df.columns != "Risk_Flag"]
+    
+    # Define features that need scaling
+    log_transform_features = ['Experience_Age_Ratio']
+    count_uniform_features = ['Income']
+    
+    # Fit scalers
+    standard_scaler = StandardScaler()
+    minmax_scaler = MinMaxScaler()
+    
+    # Fit on training data
+    df[count_uniform_features] = minmax_scaler.fit_transform(df[count_uniform_features])
+    df[log_transform_features] = np.log1p(df[log_transform_features])
+    df[log_transform_features] = standard_scaler.fit_transform(df[log_transform_features])
+    
+    _fitted_scalers = {
+        'count_uniform': minmax_scaler,
+        'log_transform': standard_scaler,
+        'log_transform_features': log_transform_features,
+        'count_uniform_features': count_uniform_features
+    }
+    
+    # Save for future use
+    joblib.dump(_fitted_scalers, scalers_path)
+    
+    return _fitted_scalers
 
 # =====================================================================Functions for data pre-processing========================================================================
 
@@ -207,90 +249,98 @@ def feature_engineering(data):
         return data
     
 ## Feature encoding function
-def feature_encoding(data, original_data=ori_df_preprocessed):
-        # A. Handle ordinal encoding for Car_Ownership and Generation (unchanged)
-        data['Car_Ownership'] = data['Car_Ownership'].map({'no': 0, 'yes': 1})
-
-        data['Generation'] = data['Generation'].map({'Generation Z': 0,
-                                                            'Generation Millenials': 1,
-                                                            'Generation X' : 2,
-                                                            'Boomers II' : 3,
-                                                            'Boomers I' : 4,
-                                                            'Other' : 5})
+def feature_encoding(data, expected_columns=None):
+    """Encode features for model input.
+    
+    Args:
+        data: DataFrame to encode
+        expected_columns: List of expected column names after encoding (from training data)
         
-        # B. Handle one-hot encoding for Profession using original data categories
-        unique_professions = original_data.filter(like='Prof_').columns
-        prof_encoded = pd.DataFrame(0, index=data.index, columns=unique_professions)
-        if f"Prof_{data['Profession_Group'].iloc[0]}" in unique_professions:
-            prof_encoded[f"Prof_{data['Profession_Group'].iloc[0]}"] = 1
-        data = drop_columns(data, ['Profession_Group'])
-        data = pd.concat([data, prof_encoded], axis=1)
+    Returns:
+        Encoded DataFrame with columns matching expected_columns
+    """
+    # A. Handle ordinal encoding for Car_Ownership and Generation
+    data['Car_Ownership'] = data['Car_Ownership'].map({'no': 0, 'yes': 1})
 
-        # C. Handle one-hot encoding for State using original data categories
-        unique_states = original_data.filter(like='State_').columns
-        state_encoded = pd.DataFrame(0, index=data.index, columns=unique_states)
-        if f"State_{data['State_Group'].iloc[0]}" in unique_states:
-            state_encoded[f"State_{data['State_Group'].iloc[0]}"] = 1
-        data = drop_columns(data, ['State_Group'])
-        data = pd.concat([data, state_encoded], axis=1)
+    data['Generation'] = data['Generation'].map({'Generation Z': 0,
+                                                        'Generation Millenials': 1,
+                                                        'Generation X' : 2,
+                                                        'Boomers II' : 3,
+                                                        'Boomers I' : 4,
+                                                        'Other' : 5})
+    
+    # If expected_columns not provided, extract from data
+    if expected_columns is None:
+        # For backward compatibility - should not happen in normal flow
+        raise ValueError("expected_columns must be provided")
+    
+    # Extract unique categories from expected columns
+    unique_professions = [col for col in expected_columns if col.startswith('Prof_')]
+    unique_states = [col for col in expected_columns if col.startswith('State_')]
+    unique_cities = [col for col in expected_columns if col.startswith('City_')]
+    
+    # B. Handle one-hot encoding for Profession
+    prof_encoded = pd.DataFrame(0, index=data.index, columns=unique_professions)
+    prof_col = f"Prof_{data['Profession_Group'].iloc[0]}"
+    if prof_col in unique_professions:
+        prof_encoded[prof_col] = 1
+    data = drop_columns(data, ['Profession_Group'])
+    data = pd.concat([data, prof_encoded], axis=1)
 
-        # D. Handle one-hot encoding for City using original data categories
-        unique_cities = original_data.filter(like='City_').columns
-        city_encoded = pd.DataFrame(0, index=data.index, columns=unique_cities)
-        if f"City_{data['City_Group'].iloc[0]}" in unique_cities:
-            city_encoded[f"City_{data['City_Group'].iloc[0]}"] = 1
-        data = drop_columns(data, ['City_Group'])
-        data = pd.concat([data, city_encoded], axis=1)
+    # C. Handle one-hot encoding for State
+    state_encoded = pd.DataFrame(0, index=data.index, columns=unique_states)
+    state_col = f"State_{data['State_Group'].iloc[0]}"
+    if state_col in unique_states:
+        state_encoded[state_col] = 1
+    data = drop_columns(data, ['State_Group'])
+    data = pd.concat([data, state_encoded], axis=1)
 
-        # Ensure all expected columns are present before moving to scaling
-        expected_columns = original_data.columns.tolist()
-        for col in expected_columns:
-            if col not in data.columns:
-                data[col] = 0
+    # D. Handle one-hot encoding for City
+    city_encoded = pd.DataFrame(0, index=data.index, columns=unique_cities)
+    city_col = f"City_{data['City_Group'].iloc[0]}"
+    if city_col in unique_cities:
+        city_encoded[city_col] = 1
+    data = drop_columns(data, ['City_Group'])
+    data = pd.concat([data, city_encoded], axis=1)
 
-        for col in data.columns:
-            if col not in expected_columns:
-                data.drop(columns=col, inplace=True)
+    # Ensure all expected columns are present before moving to scaling
+    for col in expected_columns:
+        if col not in data.columns:
+            data[col] = 0
 
-        # Reorder and match columns to match training data
-        data = data[expected_columns]
+    # Remove any extra columns not in expected columns
+    cols_to_drop = [col for col in data.columns if col not in expected_columns]
+    if cols_to_drop:
+        data = data.drop(columns=cols_to_drop)
 
-        return data, expected_columns
+    # Reorder and match columns to match training data
+    data = data[expected_columns]
+
+    return data
 
 ## Feature scaling function
-def feature_scaling(data, original_data=ori_df_preprocessed):
+def feature_scaling(data, original_data=None):
+    """Scale features using pre-fitted scalers for efficient inference.
+    
+    Args:
+        data: DataFrame to scale
+        original_data: Deprecated parameter, kept for backward compatibility
         
-        # Initialize scalers
-        standard_scaler = StandardScaler()
-        minmax_scaler = MinMaxScaler()
-
-        # Define feature groups for targeted scaling
-        # Each feature group requires a specific scaling approach
-        log_transform_features = ['Experience_Age_Ratio']  # Features with high skewness
-        count_uniform_features = ['Income']  # Discrete features representing quantities
-
-        scalers = {}  # Dictionary to store fitted scalers and feature info
-
-        # TRAINING DATA SCALING
-        # Step 1: Scale count/uniform features using MinMaxScaler
-        original_data[count_uniform_features] = minmax_scaler.fit_transform(original_data[count_uniform_features])
-        scalers['count_uniform'] = minmax_scaler
-
-        # Step 2: Scale skewed features using log transformation and standardization
-
-        original_data[log_transform_features] = np.log1p(original_data[log_transform_features])
-        original_data[log_transform_features] = standard_scaler.fit_transform(original_data[log_transform_features])
-        scalers['log_transform'] = standard_scaler
-
-        # INFERENCE DATA SCALING
-        # Apply the same transformations used in training data
-        # Use .transform() instead of .fit_transform() to maintain training distribution
-
-        # Scale count/uniform features
-        data[count_uniform_features] = scalers['count_uniform'].transform(data[count_uniform_features])
-
-        # Scale skewed features
-        data[log_transform_features] = np.log1p(data[log_transform_features])
-        data[log_transform_features] = scalers['log_transform'].transform(data[log_transform_features])
-
-        return data
+    Returns:
+        Scaled DataFrame
+    """
+    # Get cached fitted scalers
+    scalers = _get_fitted_scalers()
+    
+    log_transform_features = scalers['log_transform_features']
+    count_uniform_features = scalers['count_uniform_features']
+    
+    # Apply transformations using pre-fitted scalers
+    # Scale count/uniform features
+    data[count_uniform_features] = scalers['count_uniform'].transform(data[count_uniform_features])
+    
+    # Scale skewed features
+    data[log_transform_features] = np.log1p(data[log_transform_features])
+    data[log_transform_features] = scalers['log_transform'].transform(data[log_transform_features])
+    
+    return data
