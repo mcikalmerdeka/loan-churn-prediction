@@ -1,6 +1,6 @@
 # Loan Prediction Based on Customer Behavior
 
-![Project Header](https://raw.githubusercontent.com/mcikalmerdeka/Loan-Prediction-Based-on-Costumer-Behaviour/refs/heads/main/Assets/Project%20Header.jpg)
+![Project Header](assets/Project%20Header.jpg)
 
 A machine learning solution for automated credit risk assessment to predict loan default probability based on customer behavior and demographic data.
 
