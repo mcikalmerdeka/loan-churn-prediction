@@ -1,5 +1,7 @@
 *.txt
-*.pkl
 *.png
 *.pyc
 **/__pycache__/
+
+# virtual environment
+.venv/
