@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import math
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Sequence, Tuple, Any
 
 # ╔══════════════════════════════════════════════════════════════════════════════════╗
 # ║                       Functions for Data Visualization                           ║
@@ -17,8 +17,9 @@ def _flatten_axes(ax) -> np.ndarray:
     return np.array([ax])
 
 
-def _validate_columns(col_series: List[str]) -> None:
-    if not col_series:
+def _validate_columns(col_series: Sequence[str]) -> None:
+    # pandas Index is not a list and cannot be used in a boolean context.
+    if col_series is None or len(col_series) == 0:
         raise ValueError("col_series must contain at least one column")
 
 ## Hisplot and kdeplot analysis
