@@ -1,7 +1,13 @@
+category-encoders
+ipykernel
 joblib
+matplotlib
 numpy
 pandas
 scikit-learn
 scipy
 seaborn
+statsmodels
 streamlit
+tqdm
+xgboost
