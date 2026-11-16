@@ -2,84 +2,87 @@
 
 ![Project Header](assets/Project%20Header.jpg)
 
-A machine learning solution for automated credit risk assessment to predict loan default probability based on customer behavior and demographic data.
+A machine learning solution for automated credit risk assessment using customer behavior and demographic data.
 
-**This is the repository for the final project of the Rakamin Data Science Bootcamp Batch 39 that I attended. We are required to go through the end-to-end process of a data science project analyzing factors influencing the default (failure to pay) of a lending company. The original progress and result of each stage can be seen in the "Original Indonesian Version" folder, while what is displayed here is the result of the conversion from Indonesian to English, accompanied by further improvements made after the completion of the final project.**
+> **Model integrity note (2026):** the original project reported 85.88% test recall. That number came from cross-validation after SMOTE had been applied to the whole training set, so synthetic neighbours leaked across folds. On a real, untouched holdout the deployed KNN scores near random. The honest numbers and the corrected evaluation are documented below and in the app's **Insights** tab.
 
 ## Project Overview
 
-End-to-end data science project that analyzes customer demographics, income, assets, and employment data to predict loan default risk. Includes comprehensive EDA, preprocessing pipelines, K-Nearest Neighbors (KNN) classification model, and an interactive Streamlit dashboard for real-time loan risk prediction.
+End-to-end data science project that analyzes customer demographics, income, assets, and employment data to predict loan default risk. The repository now follows the modular layout used by the `clicked_ads/` reference project:
+
+- `utils/` is the generic, reusable data-science library (EDA, preprocessing, feature selection, evaluation, tuning).
+- `loan_prediction/` holds every dataset-specific rule: schema, preprocessing pipeline, analytics, charts, and Streamlit views.
+- `main.py` is a thin entry point that loads the persisted model and renders four tabs.
+- `notebook.ipynb` keeps the analysis narrative and uses `utils` instead of duplicating helpers.
 
 ## Key Results
 
-- **Model Algorithm**: K-Nearest Neighbors (KNN) with hyperparameter tuning
-- **Performance Metrics**:
-  - Training Recall: 97.97% ± 0.06
-  - Testing Recall: 85.88% ± 0.23
-- **Dataset Size**: 252,000 loan applications (32,000+ after preprocessing)
-- **Primary Goal**: High recall to minimize false negatives (approving high-risk borrowers)
+| Evaluation | Recall | ROC-AUC |
+|---|---:|---:|
+| Leaky CV (SMOTE before folds) — **do not report** | 85.88% | 0.801 |
+| Honest 25% holdout (deployed KNN) | 36.76% | 0.440 |
+| Honest 5-fold CV, same KNN, no resampling | 1.18% | 0.453 |
+| Honest 5×3 CV, SMOTE inside folds, same KNN | 28.80% ± 0.97 | 0.451 ± 0.005 |
+| Honest 5-fold CV, balanced logistic regression | 47.66% | 0.508 |
 
-## Members of Group 3 (**Dackers**)
+The honest holdout is a single stratified 25% split (`random_state=42`). The leak-free CV row applies SMOTE inside each training fold, never before it. All honest estimates sit near ROC-AUC 0.5, which means the available features carry little usable signal for `Risk_Flag`. This is a property of the dataset, not a tuning failure.
 
-1. Muhammad Cikal Merdeka (Leader)
-2. Maulana Rifan Haditama
-3. Maulana Ibrahim
-4. Maria Meidiana Siahaan
-5. Revita Rahmadini
-6. Nugraha Eddy Wijayanto
-7. Mochamad Ali Mustofa
+- **Model algorithm:** K-Nearest Neighbours (k=19, Manhattan distance, distance weights)
+- **Dataset size:** 252,000 loan applications; 43,190 unique rows after de-duplication; 32,392 in the notebook's training split
+- **Primary goal:** high recall to minimise false negatives (approving high-risk borrowers). The deployed artifact does not achieve that goal reliably.
 
 ## Project Structure
 
 ```
-├── analysis/               # Jupyter notebooks for EDA and model training
-├── Assets/                 # Project images and media
-├── data/                   # Raw and processed datasets
+├── data/
 │   ├── Training Data.csv
-│   ├── df_model_rewrite.csv
+│   ├── df_model_rewrite.csv      # encoded reference frame used by the model
 │   └── batch_example.csv
-├── models/                 # Trained model artifacts
+├── docs/
+├── loan_prediction/              # application package
+│   ├── config.py                 # filesystem paths
+│   ├── schema.py                 # column names, mappings, feature definitions
+│   ├── pipeline.py               # raw row -> 20-feature model matrix
+│   ├── analytics.py              # honest holdout metrics and dataset analytics
+│   ├── ui.py                     # Altair chart helpers
+│   └── views/                    # Predict, Batch, Insights, About
+├── models/
 │   ├── tuned_knn_model.joblib
-│   └── fitted_scalers.joblib
-├── Original Indonesian Version/  # Original bootcamp deliverables
-├── scripts/                # Legacy scripts folder
-├── utils/                  # Reusable preprocessing and ML functions
-│   ├── preprocessing.py
-│   └── feature_definitions.py
-├── main.py                 # Streamlit application
-├── notebook.ipynb          # EDA and model training notebook
-├── pyproject.toml          # Project dependencies (uv/pip)
-├── requirements.txt        # Pip-compatible dependencies
-└── README.md              # Project documentation
+│   └── feature_scalers.joblib    # reference copy of the notebook scalers
+├── reference_revamp/             # separate clicked-ads reference implementation
+├── tasks/                        # original bootcamp stage submissions
+├── tests/                        # pipeline, analytics, and schema regression tests
+├── utils/                        # generic reusable data-science library
+├── .streamlit/config.toml        # shared theme
+├── main.py                       # Streamlit entry point
+├── notebook.ipynb                # EDA, preprocessing, modelling, evaluation
+├── pyproject.toml
+├── requirements.txt
+└── README.md
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.14+
 - uv (recommended) or pip
 
 ### Installation
 
 ```bash
-# Clone repository
 git clone https://github.com/mcikalmerdeka/Loan-Prediction-Based-on-Costumer-Behaviour.git
 cd Loan-Prediction-Based-on-Costumer-Behaviour
 
-# Create virtual environment
 python -m venv .venv
 
-# Activate virtual environment
-# On Windows:
+# Windows
 .venv\Scripts\activate
-# On macOS/Linux:
+# macOS / Linux
 source .venv/bin/activate
 
-# Install dependencies (using pip)
 pip install -r requirements.txt
-
-# Or using uv (faster alternative)
+# or
 uv sync
 ```
 
@@ -89,73 +92,67 @@ uv sync
 streamlit run main.py
 ```
 
-Access the app at `http://localhost:8501`
+Access the app at `http://localhost:8501`.
 
-## Features
+### Run the Tests
 
-- **Data Input Options**: Manual individual entry or batch CSV upload
-- **Interactive Preprocessing**: Step-by-step data transformation with visual feedback
-  - Data type conversion
-  - Missing value handling
-  - Outlier detection and filtering
-  - Feature engineering (age groups, experience ratios, location groupings)
-  - Categorical encoding (ordinal + one-hot)
-  - Feature scaling (MinMax + StandardScaler)
-- **Model Performance Display**: View model metrics and training information
-- **Real-time Predictions**: Instant loan default risk assessment
-- **Batch Processing**: Efficient processing of multiple loan applications
-- **Example Data**: Built-in test cases for exploring model behavior
-- **Data Dictionary**: Comprehensive feature explanations and definitions
+```bash
+python -m unittest discover -s tests -v
+```
+
+## App Features
+
+- **Predict** — score one applicant from the eight fields that actually affect the model. Marital status, house ownership, and current-job tenure are not requested because the deployed model ignores them.
+- **Batch** — upload a CSV or use the five-row example, score every row, inspect the preprocessing trace, and download predictions. If the file includes `Risk_Flag`, the app also reports accuracy, recall, and ROC-AUC for that batch.
+- **Insights** — honest holdout metrics, confusion matrix, feature relevance, target balance, default rates by profession group, distributions, and correlation. The leaky 85.88% figure is shown side by side with the honest holdout and labelled.
+- **About** — purpose, model card, data dictionary, limitations, training-data preview, and data information.
+
+## Preprocessing Pipeline
+
+The persisted KNN is a bare estimator, so the app reproduces the notebook's preprocessing exactly:
+
+1. Rename raw headers (`CITY`, `Married/Single`, `CURRENT_JOB_YRS`, ...).
+2. Clean and lower-case `Profession`, `City`, and `State`.
+3. Derive `Generation`, `Experience_Age_Ratio`, and the profession / state / city groups.
+4. Encode `Generation` ordinally, `Car_Ownership` as binary, and the groups as one-hot (`drop_first=True`).
+5. Scale `Income` with MinMax and `Experience_Age_Ratio` with log1p + StandardScaler.
+
+The scalers are fitted at startup from the reference frame's training split; the encoders are fitted from the documented categories in `loan_prediction/schema.py`. The scaler values match `models/feature_scalers.joblib` exactly.
 
 ## Technical Stack
 
-- Python 3.8+
-- scikit-learn (KNN classifier, preprocessing, model tuning)
-- pandas, numpy (data processing)
-- matplotlib, seaborn (visualization)
-- Streamlit (web application)
+- Python 3.14+
+- pandas, numpy
+- scikit-learn (KNN, preprocessing, evaluation)
+- category-encoders
+- Streamlit (four-tab app)
+- Altair (charts, bundled with Streamlit)
 - joblib (model serialization)
-- scipy (statistical functions)
+- matplotlib / seaborn (notebook)
+
+The notebook additionally uses TensorFlow, SHAP, and imbalanced-learn for the experiment and leak-free evaluation. Those are notebook-only extras and are not required to run the Streamlit app.
 
 ## Business Problem
 
-A lending company needed to improve their credit risk assessment process to reduce financial losses from loan defaults. The manual verification procedure resulted in numerous inaccurate assessments, approving loans to borrowers who ultimately failed to repay. Additionally, the manual process consumed considerable time, making it inefficient for scaling operations.
-
-### Problem Statement
-
-How can we develop an automated system that predicts the creditworthiness of prospective borrowers to reduce the selection of high-risk customers and improve the efficiency of the loan approval process?
+A lending company needed to improve credit risk assessment and reduce financial losses from loan defaults. The manual process was slow and produced inconsistent decisions.
 
 ### Business Metrics
 
-- **Default Rate (%)** [MAIN]: The percentage of customers who fail to repay their loans. Calculated as: (Number of Loan Defaults / Total Number of Customers) × 100. Lower default rates indicate more effective risk assessment.
+- **Default rate (%) [MAIN]:** the share of applicants who fail to repay. The source data has a 19.55% default rate.
+- **Approval time [SECONDARY]:** the time taken to process an application. The app demonstrates seconds-level scoring, but this is a pipeline capability, not a measured production impact.
 
-- **Approval Time** [SECONDARY]: The time taken to process loan applications. Streamlining this process reduces operational costs and improves customer satisfaction.
+### Corrected Impact Statement
 
-### Goals
+The original write-up claimed the model reduced the default rate to 7.06% and improved approval efficiency by 99.44%. The 7.06% figure came from the leaky CV confusion matrix and is not a valid model benefit. The efficiency figure is an illustrative assumption about process time, not a measurement.
 
-- **Primary**: Enhanced credit risk evaluation through machine learning implementation with high recall to minimize false negatives
-- **Secondary**: Increased efficiency in credit risk assessment for faster processing times
+## Known Limitations
 
-### Objectives
-
-1. Build a machine learning model that predicts credit risk with high recall rate to reduce financial losses from inaccurate assessments
-2. Provide automated credit risk assessment decisions in minimal time
-3. Deliver actionable insights for loan officers to support decision-making
-
-## Project Background
-
-This project originated from the final project assignment of the Rakamin Data Science Bootcamp Batch 39. The **`Original Indonesian Version`** folder contains the original bootcamp deliverables including assignment instructions, presentations, and team submissions. The project has been further developed with additional improvements based on panelist feedback, work experience, and best practices in MLOps and software engineering.
-
-## Recent Updates
-
-- **Refactored project structure** with optimized data loading and caching
-- **Performance optimizations** including:
-  - Cached column metadata to avoid loading large datasets repeatedly
-  - Batch prediction support (predict all rows at once instead of looping)
-  - Pre-fitted scalers saved to disk for faster inference
-  - Reduced memory footprint and startup time
-- **Updated dependencies** to essential packages only
-- **Improved error handling** and user feedback in the Streamlit interface
+- **Weak signal:** honest ROC-AUC is close to 0.5 on real holdout rows.
+- **Leakage history:** SMOTE-before-CV inflated the reported recall; the notebook now labels those cells as diagnostics.
+- **Uncalibrated score:** the displayed vote share is the KNN neighbour vote, not a calibrated default probability. Training on a balanced SMOTE sample shifts the prior away from the real 19.55%.
+- **Unused fields:** `Marital_Status`, `House_Ownership`, and `Current_Job_Years` are collected but ignored.
+- **Version mismatch:** the artifact was pickled with scikit-learn 1.4.0 and is loaded under 1.8.0. The app suppresses the compatibility warning; re-running the notebook re-saves the artifact under the current version.
+- **Not production-ready:** predictions support exploration and pipeline testing, not real lending decisions.
 
 ## Try the Live App
 
@@ -163,7 +160,7 @@ Link to the deployed app: [Loan Prediction Based on Customer Behavior](https://l
 
 ## Author
 
-**Muhammad Cikal Merdeka** | Data Analyst/Data Scientist
+**Muhammad Cikal Merdeka** | Data Analyst / Data Scientist
 
 - [GitHub](https://github.com/mcikalmerdeka)
 - [LinkedIn](https://www.linkedin.com/in/mcikalmerdeka)
