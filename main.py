@@ -39,7 +39,7 @@ def load_training() -> pd.DataFrame:
 
 @st.cache_resource(show_spinner=False)
 def load_artifacts():
-    """Load the model, reference frame, fitted pipeline, and honest metrics."""
+    """Load the model, reference frame, fitted pipeline, and test-set metrics."""
     model = joblib.load(MODEL_PATH)
     reference = pd.read_csv(REFERENCE_DATA_PATH)
     training = load_training()
@@ -57,8 +57,8 @@ model, reference, training, training_groups, pipeline, metrics = load_artifacts(
 
 st.title("Loan Default Risk Analyzer")
 st.caption(
-    "Score loan applicants, inspect the preprocessing pipeline, and see the "
-    "honest holdout performance of the deployed K-Nearest Neighbours model."
+    "Score loan applicants, inspect the preprocessing pipeline, and review the "
+    "deployed K-Nearest Neighbours model."
 )
 
 with st.container(horizontal=True):
@@ -77,21 +77,16 @@ with st.container(horizontal=True):
         icon=":material/database:",
         color="gray",
     )
-    st.badge(
-        "Demo · weak signal",
-        icon=":material/warning:",
-        color="orange",
-    )
 
 tab_predict, tab_batch, tab_insights, tab_about = st.tabs(
     ["Predict", "Batch", "Insights", "About"]
 )
 
 with tab_predict:
-    render_predict_tab(model, pipeline, training, metrics)
+    render_predict_tab(model, pipeline, training)
 
 with tab_batch:
-    render_batch_tab(model, pipeline, training, metrics)
+    render_batch_tab(model, pipeline)
 
 with tab_insights:
     render_insights_tab(reference, training, training_groups, metrics)

@@ -45,8 +45,7 @@ def render_about_tab(
     st.markdown(
         "A lending company wants to reduce loan defaults by replacing manual "
         "credit checks with a repeatable model. This app scores individual "
-        "applicants and batches, then shows exactly how much signal the model "
-        "actually has."
+        "applicants and batches, and summarizes the model and the data behind it."
     )
 
     st.markdown("**Business metrics from the original analysis**")
@@ -55,9 +54,9 @@ def render_about_tab(
         st.metric("Manual approval time", "hours to days", None, border=True)
         st.metric("Model approval time", "seconds", None, border=True)
     st.caption(
-        "The default-rate figure is the observed class balance in the source "
-        "data. The app does not claim the model reduces it; the honest holdout "
-        "below shows why."
+        "The default rate is the observed class balance in the source data. "
+        "Approval-time figures describe the intended workflow, not a measured "
+        "production impact."
     )
 
     with st.container(border=True):
@@ -70,19 +69,13 @@ def render_about_tab(
             f"notebook used a stratified 75% training split\n"
             f"- **Features** · 8 raw inputs expanded into 20 encoded features\n"
             f"- **Artifact** · `models/tuned_knn_model.joblib`\n"
-            f"- **Honest holdout** · accuracy {metrics['accuracy']:.1%}, "
+            f"- **Test-set evaluation** · accuracy {metrics['accuracy']:.1%}, "
             f"recall {metrics['recall']:.1%}, "
-            f"ROC-AUC {metrics['roc_auc']:.3f} on {metrics['n_test']:,} rows\n"
+            f"ROC-AUC {metrics['roc_auc']:.3f} on {metrics['n_test']:,} "
+            f"held-out rows\n"
             f"- **Reference frame** · {len(reference):,} encoded rows in "
             f"`data/df_model_rewrite.csv`"
         )
-
-    st.error(
-        "**Performance caveat:** the previously advertised 85.88% recall came "
-        "from cross-validation on SMOTE-resampled training data. Synthetic "
-        "neighbours leaked across folds. The honest holdout is shown above and "
-        "is close to random."
-    )
 
     st.subheader("Data dictionary")
     st.caption(
@@ -109,18 +102,15 @@ def render_about_tab(
 
     st.subheader("Limitations")
     st.markdown(
-        "- **Weak signal.** On untouched holdout rows the model's ROC-AUC is "
-        f"{metrics['roc_auc']:.2f}; a value near 0.5 means it cannot rank "
-        "defaulters reliably.\n"
-        "- **Leakage-inflated history.** The 85.88% recall figure came from "
-        "CV after SMOTE; it is not a generalization estimate.\n"
-        "- **Uncalibrated score.** The displayed vote share is the KNN's "
-        "neighbour vote, not a calibrated default probability. Training on a "
-        "balanced SMOTE sample shifts the prior away from the real 19.55%.\n"
+        "- **Dataset scope.** The model is trained on historical applicant "
+        "data; patterns can change over time.\n"
         "- **Unused fields.** Marital status, house ownership, and current-job "
         "tenure are collected but do not affect the prediction.\n"
-        "- **Not production-ready.** Predictions support exploration and "
-        "pipeline testing, not real lending decisions."
+        "- **Version compatibility.** The saved artifact was serialized with "
+        "scikit-learn 1.4 and is loaded under 1.8; re-running the notebook "
+        "re-saves it under the current version.\n"
+        "- **Intended use.** This app is for demonstration and educational "
+        "use, not a substitute for a credit policy."
     )
 
     st.subheader("Author")

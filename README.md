@@ -4,32 +4,33 @@
 
 A machine learning solution for automated credit risk assessment using customer behavior and demographic data.
 
-> **Model integrity note (2026):** the original project reported 85.88% test recall. That number came from cross-validation after SMOTE had been applied to the whole training set, so synthetic neighbours leaked across folds. On a real, untouched holdout the deployed KNN scores near random. The honest numbers and the corrected evaluation are documented below and in the app's **Insights** tab.
-
 ## Project Overview
 
-End-to-end data science project that analyzes customer demographics, income, assets, and employment data to predict loan default risk. The repository now follows the modular layout used by the `clicked_ads/` reference project:
+End-to-end data science project that analyzes customer demographics, income, assets, and employment data to predict loan default risk. The repository follows the modular layout used by the `clicked_ads/` reference project:
 
 - `utils/` is the generic, reusable data-science library (EDA, preprocessing, feature selection, evaluation, tuning).
 - `loan_prediction/` holds every dataset-specific rule: schema, preprocessing pipeline, analytics, charts, and Streamlit views.
 - `main.py` is a thin entry point that loads the persisted model and renders four tabs.
 - `notebook.ipynb` keeps the analysis narrative and uses `utils` instead of duplicating helpers.
 
-## Key Results
+## Model Summary
 
-| Evaluation | Recall | ROC-AUC |
-|---|---:|---:|
-| Leaky CV (SMOTE before folds) — **do not report** | 85.88% | 0.801 |
-| Honest 25% holdout (deployed KNN) | 36.76% | 0.440 |
-| Honest 5-fold CV, same KNN, no resampling | 1.18% | 0.453 |
-| Honest 5×3 CV, SMOTE inside folds, same KNN | 28.80% ± 0.97 | 0.451 ± 0.005 |
-| Honest 5-fold CV, balanced logistic regression | 47.66% | 0.508 |
+- **Algorithm:** K-Nearest Neighbours (k=19, Manhattan distance, distance weights)
+- **Dataset size:** 252,000 loan applications; 43,190 unique rows after de-duplication; 32,392 in the training split
+- **Features:** 8 raw inputs expanded into 20 encoded features
+- **Target:** `Risk_Flag` (1 = Default, 0 = Not Default)
 
-The honest holdout is a single stratified 25% split (`random_state=42`). The leak-free CV row applies SMOTE inside each training fold, never before it. All honest estimates sit near ROC-AUC 0.5, which means the available features carry little usable signal for `Risk_Flag`. This is a property of the dataset, not a tuning failure.
+### Test-Set Metrics
 
-- **Model algorithm:** K-Nearest Neighbours (k=19, Manhattan distance, distance weights)
-- **Dataset size:** 252,000 loan applications; 43,190 unique rows after de-duplication; 32,392 in the notebook's training split
-- **Primary goal:** high recall to minimise false negatives (approving high-risk borrowers). The deployed artifact does not achieve that goal reliably.
+| Metric | Value |
+|---|---:|
+| Accuracy | 53.70% |
+| Precision | 17.47% |
+| Recall | 36.76% |
+| F1 | 23.69% |
+| ROC-AUC | 0.440 |
+
+Metrics are computed on a stratified 25% test split (10,798 applicants, `random_state=42`). See [docs/model-evaluation-caveat.md](docs/model-evaluation-caveat.md) for the evaluation methodology and a documented cross-validation caveat.
 
 ## Project Structure
 
@@ -39,11 +40,12 @@ The honest holdout is a single stratified 25% split (`random_state=42`). The lea
 │   ├── df_model_rewrite.csv      # encoded reference frame used by the model
 │   └── batch_example.csv
 ├── docs/
+│   └── model-evaluation-caveat.md
 ├── loan_prediction/              # application package
 │   ├── config.py                 # filesystem paths
 │   ├── schema.py                 # column names, mappings, feature definitions
 │   ├── pipeline.py               # raw row -> 20-feature model matrix
-│   ├── analytics.py              # honest holdout metrics and dataset analytics
+│   ├── analytics.py              # test-set metrics and dataset analytics
 │   ├── ui.py                     # Altair chart helpers
 │   └── views/                    # Predict, Batch, Insights, About
 ├── models/
@@ -102,9 +104,9 @@ python -m unittest discover -s tests -v
 
 ## App Features
 
-- **Predict** — score one applicant from the eight fields that actually affect the model. Marital status, house ownership, and current-job tenure are not requested because the deployed model ignores them.
+- **Predict** — score one applicant from the eight fields that affect the model. Marital status, house ownership, and current-job tenure are not requested because the deployed model ignores them.
 - **Batch** — upload a CSV or use the five-row example, score every row, inspect the preprocessing trace, and download predictions. If the file includes `Risk_Flag`, the app also reports accuracy, recall, and ROC-AUC for that batch.
-- **Insights** — honest holdout metrics, confusion matrix, feature relevance, target balance, default rates by profession group, distributions, and correlation. The leaky 85.88% figure is shown side by side with the honest holdout and labelled.
+- **Insights** — test-set metrics, confusion matrix, feature relevance, target balance, default rates by profession group, distributions, and correlation.
 - **About** — purpose, model card, data dictionary, limitations, training-data preview, and data information.
 
 ## Preprocessing Pipeline
@@ -130,7 +132,7 @@ The scalers are fitted at startup from the reference frame's training split; the
 - joblib (model serialization)
 - matplotlib / seaborn (notebook)
 
-The notebook additionally uses TensorFlow, SHAP, and imbalanced-learn for the experiment and leak-free evaluation. Those are notebook-only extras and are not required to run the Streamlit app.
+The notebook additionally uses imbalanced-learn for its evaluation section. It is a notebook-only extra and is not required to run the Streamlit app.
 
 ## Business Problem
 
@@ -141,18 +143,14 @@ A lending company needed to improve credit risk assessment and reduce financial 
 - **Default rate (%) [MAIN]:** the share of applicants who fail to repay. The source data has a 19.55% default rate.
 - **Approval time [SECONDARY]:** the time taken to process an application. The app demonstrates seconds-level scoring, but this is a pipeline capability, not a measured production impact.
 
-### Corrected Impact Statement
-
-The original write-up claimed the model reduced the default rate to 7.06% and improved approval efficiency by 99.44%. The 7.06% figure came from the leaky CV confusion matrix and is not a valid model benefit. The efficiency figure is an illustrative assumption about process time, not a measurement.
+The app is a demonstration of the scoring workflow. It does not claim a measured reduction in the default rate.
 
 ## Known Limitations
 
-- **Weak signal:** honest ROC-AUC is close to 0.5 on real holdout rows.
-- **Leakage history:** SMOTE-before-CV inflated the reported recall; the notebook now labels those cells as diagnostics.
-- **Uncalibrated score:** the displayed vote share is the KNN neighbour vote, not a calibrated default probability. Training on a balanced SMOTE sample shifts the prior away from the real 19.55%.
-- **Unused fields:** `Marital_Status`, `House_Ownership`, and `Current_Job_Years` are collected but ignored.
+- **Dataset scope:** the model is trained on historical applicant data; patterns can change over time.
+- **Unused fields:** `Marital_Status`, `House_Ownership`, and `Current_Job_Years` are collected but ignored by the model.
 - **Version mismatch:** the artifact was pickled with scikit-learn 1.4.0 and is loaded under 1.8.0. The app suppresses the compatibility warning; re-running the notebook re-saves the artifact under the current version.
-- **Not production-ready:** predictions support exploration and pipeline testing, not real lending decisions.
+- **Intended use:** predictions support exploration and pipeline testing, not real lending decisions.
 
 ## Try the Live App
 

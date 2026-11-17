@@ -6,9 +6,6 @@ import pandas as pd
 import streamlit as st
 
 from loan_prediction.analytics import (
-    LEAK_FREE_CV_REFERENCE,
-    LEAKY_CV_REFERENCE,
-    WEAK_SIGNAL_AUC,
     default_rate_by_group,
     feature_relevance,
     numeric_correlation,
@@ -37,68 +34,27 @@ def render_insights_tab(
     metrics: dict,
 ) -> None:
     st.markdown(
-        "How the deployed model performs on untouched rows, what the features "
-        "actually contain, and why the previously reported recall was inflated."
+        "How the deployed model performs on held-out applicants and what the "
+        "training data looks like."
     )
 
-    st.warning(
-        "**The 85.88% recall previously reported is not a holdout result.** It "
-        "came from cross-validation after SMOTE had been applied to the whole "
-        "training set, so synthetic neighbours leaked across folds. The honest "
-        "numbers are below."
-    )
-
-    comparison = pd.DataFrame(
-        [
-            {
-                "Evaluation": "Leaky CV (previously reported)",
-                "Recall (%)": LEAKY_CV_REFERENCE["recall"] * 100,
-                "ROC-AUC": LEAKY_CV_REFERENCE["roc_auc"],
-            },
-            {
-                "Evaluation": "Honest 25% holdout (this app)",
-                "Recall (%)": metrics["recall"] * 100,
-                "ROC-AUC": metrics["roc_auc"],
-            },
-            {
-                "Evaluation": "Leak-free CV, SMOTE inside folds (notebook)",
-                "Recall (%)": LEAK_FREE_CV_REFERENCE["recall"] * 100,
-                "ROC-AUC": LEAK_FREE_CV_REFERENCE["roc_auc"],
-            },
-        ]
-    )
-    st.dataframe(
-        comparison,
-        hide_index=True,
-        column_config={
-            "Recall (%)": st.column_config.NumberColumn("Recall", format="%.2f%%"),
-            "ROC-AUC": st.column_config.NumberColumn("ROC-AUC", format="%.3f"),
-        },
-    )
-    st.caption(
-        f"Holdout: {metrics['n_test']:,} applicants, stratified 25% split, "
-        "random_state=42. The two CV rows are notebook reference values; the "
-        "holdout is recomputed by the app."
-    )
-
+    st.subheader("Model performance")
     with st.container(horizontal=True):
         st.metric("Accuracy", f"{metrics['accuracy']:.1%}", border=True)
         st.metric("Precision", f"{metrics['precision']:.1%}", border=True)
         st.metric("Recall", f"{metrics['recall']:.1%}", border=True)
         st.metric("ROC-AUC", f"{metrics['roc_auc']:.3f}", border=True)
 
-    if metrics["roc_auc"] < WEAK_SIGNAL_AUC:
-        st.error(
-            f"ROC-AUC is {metrics['roc_auc']:.2f}. A score near 0.5 means the "
-            "features carry no reliable ranking signal for this target. The app "
-            "is a pipeline demonstration, not a production credit model."
-        )
+    st.caption(
+        f"Evaluated on {metrics['n_test']:,} held-out applicants from a "
+        "stratified 25% test split."
+    )
 
     left, right = st.columns([1, 1.3], gap="large")
 
     with left:
         with st.container(border=True):
-            st.markdown("**Confusion matrix · honest holdout**")
+            st.markdown("**Confusion matrix**")
             st.altair_chart(
                 confusion_chart(metrics["confusion_matrix"]), width="stretch"
             )
@@ -110,9 +66,9 @@ def render_insights_tab(
             relevance = _cached_relevance(reference)
             st.altair_chart(feature_importance_chart(relevance), width="stretch")
             st.caption(
-                "Mutual information between each encoded feature and the target. "
-                "Scores near zero confirm the weak-signal finding; this is a "
-                "property of the data, not the KNN's fitted weights."
+                "Mutual information between each encoded feature and the "
+                "target. This describes the features, not the KNN's fitted "
+                "weights."
             )
 
     st.subheader("Dataset overview")

@@ -25,31 +25,6 @@ from utils import calculate_feature_importance
 from .pipeline import RANDOM_STATE, TEST_SIZE
 from .schema import MODEL_FEATURES, OUTCOME_LABELS, TARGET_COLUMN
 
-# The figure previously advertised by the README and model card. It came from
-# cross-validation after SMOTE had already been applied to the whole training
-# set, so synthetic rows leaked across folds. It is kept only for the
-# side-by-side comparison in the Insights tab.
-LEAKY_CV_REFERENCE = {
-    "recall": 0.8588,
-    "recall_std": 0.0023,
-    "roc_auc": 0.8011,
-    "roc_auc_std": 0.0029,
-    "source": "CV on SMOTE-resampled training data (leaky)",
-}
-
-# Produced by notebook.ipynb after moving SMOTE inside each CV fold:
-# 5 folds x 3 repeats, same KNN hyperparameters. Kept as a reference because
-# the app does not depend on imbalanced-learn and cannot recompute it live.
-LEAK_FREE_CV_REFERENCE = {
-    "recall": 0.28795,
-    "recall_std": 0.00965,
-    "roc_auc": 0.45065,
-    "roc_auc_std": 0.00486,
-    "source": "Leak-free CV, SMOTE inside folds (notebook)",
-}
-
-WEAK_SIGNAL_AUC = 0.55
-
 
 def outcome_label(prediction: int) -> str:
     return OUTCOME_LABELS[int(prediction)]
@@ -73,7 +48,7 @@ def confidence_label(default_share: float) -> str:
 
 
 def classification_metrics(y_true, predictions, probabilities) -> Dict[str, Any]:
-    """Score labels and probabilities once; shared by holdout and batch."""
+    """Score labels and probabilities once; shared by test-set and batch scoring."""
     tn, fp, fn, tp = confusion_matrix(y_true, predictions, labels=[0, 1]).ravel()
 
     return {
@@ -87,12 +62,10 @@ def classification_metrics(y_true, predictions, probabilities) -> Dict[str, Any]
 
 
 def model_metrics(model, pipeline, reference: pd.DataFrame) -> Dict[str, Any]:
-    """Evaluate the persisted model on the notebook's held-out 25% split.
+    """Evaluate the persisted model on the held-out 25% test split.
 
     The split reproduces ``train_test_split(..., test_size=0.25,
-    stratify=y, random_state=42)`` from the notebook. This is real, untouched
-    data; unlike the notebook's CV on SMOTE-resampled rows, it is not inflated
-    by synthetic neighbours.
+    stratify=y, random_state=42)`` from the notebook.
     """
     features = reference[MODEL_FEATURES]
     target = reference[TARGET_COLUMN]
@@ -162,8 +135,7 @@ def feature_relevance(reference: pd.DataFrame, top_n: int = 15) -> pd.DataFrame:
     """Statistical feature relevance for the encoded model matrix.
 
     Mutual information is model-agnostic; it describes the signal available in
-    the features, not the KNN's fitted weights. Values near zero confirm the
-    weak-signal finding.
+    the features, not the KNN's fitted weights.
     """
     features = reference[MODEL_FEATURES]
     target = reference[TARGET_COLUMN]

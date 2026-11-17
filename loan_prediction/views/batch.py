@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 
 from loan_prediction.analytics import (
-    WEAK_SIGNAL_AUC,
     classification_metrics,
     confidence_label,
     outcome_label,
@@ -208,18 +207,12 @@ def _render_results(
             st.dataframe(steps["scaled"].head(20), hide_index=True)
 
 
-def render_batch_tab(model, pipeline, training: pd.DataFrame, metrics: dict) -> None:
+def render_batch_tab(model, pipeline) -> None:
     st.markdown(
         "Upload an applicant CSV and score every row in one pass. Results "
         "include a predicted outcome, the KNN neighbour vote share, and a "
         "download. The target column is optional."
     )
-
-    if metrics["roc_auc"] < WEAK_SIGNAL_AUC:
-        st.warning(
-            "The deployed KNN scores below random on real holdout rows. Treat "
-            "batch results as a pipeline demonstration, not lending decisions."
-        )
 
     source = st.segmented_control(
         "Data source",

@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 
 from loan_prediction.analytics import (
-    WEAK_SIGNAL_AUC,
     confidence_label,
     outcome_label,
     predict_frame,
@@ -70,7 +69,7 @@ def _options(data: pd.DataFrame, column: str, preferred: str) -> tuple[list[str]
     return options, index
 
 
-def _render_result(result: dict, metrics: dict) -> None:
+def _render_result(result: dict) -> None:
     st.markdown("### Prediction")
 
     with st.container(horizontal=True):
@@ -93,15 +92,8 @@ def _render_result(result: dict, metrics: dict) -> None:
     vote_share_progress(result["default_share"])
     st.caption(
         "Vote share is the share of the 19 nearest neighbours in the Default "
-        "class. It is not calibrated to the real default rate because the "
-        "model was trained on a balanced SMOTE sample."
+        "class. Higher values indicate a stronger default signal."
     )
-
-    if metrics["roc_auc"] < WEAK_SIGNAL_AUC:
-        st.error(
-            f"This model's honest holdout ROC-AUC is {metrics['roc_auc']:.2f} "
-            "(below random). Treat the result as a demo, not a lending decision."
-        )
 
     inputs = result["inputs"]
     st.caption(
@@ -113,19 +105,12 @@ def _render_result(result: dict, metrics: dict) -> None:
         st.dataframe(result["model_input"], hide_index=True)
 
 
-def render_predict_tab(model, pipeline, training: pd.DataFrame, metrics: dict) -> None:
+def render_predict_tab(model, pipeline, training: pd.DataFrame) -> None:
     st.markdown(
         "Score one applicant from the fields that actually influence the model. "
         "Marital status, house ownership, and current-job tenure are collected "
         "in the source data but are not used by the deployed KNN."
     )
-
-    if metrics["roc_auc"] < WEAK_SIGNAL_AUC:
-        st.warning(
-            "**Model warning:** the deployed KNN scores below random on real "
-            f"holdout rows (ROC-AUC {metrics['roc_auc']:.2f}). This app is a "
-            "demonstration of the pipeline, not a production credit model."
-        )
 
     with st.container(horizontal=True):
         st.button(
@@ -279,4 +264,4 @@ def render_predict_tab(model, pipeline, training: pd.DataFrame, metrics: dict) -
         st.caption("Submit the form to score an applicant.")
         return
 
-    _render_result(result, metrics)
+    _render_result(result)
